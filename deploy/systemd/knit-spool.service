@@ -1,0 +1,26 @@
+[Unit]
+Description=Knit Spool Protocol relay
+After=network.target
+
+[Service]
+Type=simple
+User=knit-spool
+Group=knit-spool
+StateDirectory=knit-spool
+StateDirectoryMode=0700
+UMask=0077
+EnvironmentFile=-/etc/knit-spool/knit-spool.env
+Environment=SPOOL_LISTEN=127.0.0.1:9470
+Environment=SPOOL_DATA_PATH=/var/lib/knit-spool/spool.db
+ExecStart=/usr/local/bin/knit-spool run
+Restart=on-failure
+RestartSec=3s
+LimitNOFILE=8192
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/knit-spool
+
+[Install]
+WantedBy=multi-user.target

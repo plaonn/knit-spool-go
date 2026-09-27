@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go tests and static checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go test ./...
+      - run: go vet ./...
+
+  cross-build:
+    name: Linux ${{ matrix.arch }} cgo-free build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            goarm: ""
+          - arch: arm
+            goarm: "6"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build daemon
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: ${{ matrix.arch }}
+          GOARM: ${{ matrix.goarm }}
+        run: go build -trimpath -ldflags="-s -w" -o /tmp/knit-spool ./cmd/knit-spool
+
+  reference:
+    name: Official protocol conformance and Kotlin differential
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Checkout pinned Knit Kotlin reference
+        env:
+          REFERENCE_SHA: 0c51be517db5a0ff90587c6e5045bdd019fe4b40
+          REFERENCE_DIR: ${{ runner.temp }}/knit-spool-reference
+        run: |
+          git clone --filter=blob:none https://github.com/getknit/spool.git "$REFERENCE_DIR"
+          git -C "$REFERENCE_DIR" checkout --detach "$REFERENCE_SHA"
+      - name: Run official conformance and differential checks
+        run: scripts/verify-reference.sh "${{ runner.temp }}/knit-spool-reference"
