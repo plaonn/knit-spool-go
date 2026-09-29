@@ -1342,9 +1342,9 @@ func (e *Engine) handleAPut(p *Peer, r record, q int64, now time.Time) {
 		p.send(errorRecord("quota", &q, id, 0))
 		return
 	}
-	var oldTotal, oldArrived int
-	err = e.store.db.QueryRow("SELECT total,arrived_at FROM attachments WHERE scope=? AND aid=?", id, aid).Scan(&oldTotal, &oldArrived)
-	if err == nil && int64(oldTotal) != total {
+	var oldTotal int64
+	err = e.store.db.QueryRow("SELECT total FROM attachments WHERE scope=? AND aid=?", id, aid).Scan(&oldTotal)
+	if err == nil && oldTotal != total {
 		p.send(errorRecord("malformed", &q, id, 0))
 		return
 	}

@@ -367,6 +367,8 @@ func TestAttachmentChunkRoundTripAndConflict(t *testing.T) {
 	c.MaxAttachBytes = 1024
 	c.MaxBytes = 1 << 20
 	e := newTestEngine(t, c)
+	// arrived_at is epoch milliseconds; this exceeds ARM32's signed int range.
+	e.now = func() time.Time { return time.UnixMilli(1 << 31) }
 	p := e.Register("127.0.0.1")
 	scope := protocolFixture(32, 60)
 	aid := protocolFixture(32, 61)
@@ -388,9 +390,13 @@ func TestAttachmentChunkRoundTripAndConflict(t *testing.T) {
 	if len(got) != 2 || got[0]["t"] != "achunk" || got[1]["t"] != "ok" || !equalBytes(got[0]["data"].([]byte), data) {
 		t.Fatalf("aget: %#v", got)
 	}
+	e.Handle(p, record{"t": "aput", "q": int64(5), "scope": scope, "aid": aid, "idx": int64(0), "total": int64(1), "cid": cid[:], "data": data})
+	if got := drainPeer(p); len(got) != 1 || got[0]["t"] != "ok" {
+		t.Fatalf("identical aput retry: %#v", got)
+	}
 	other := []byte("different sealed chunk")
 	otherID := sha256.Sum256(other)
-	e.Handle(p, record{"t": "aput", "q": int64(5), "scope": scope, "aid": aid, "idx": int64(0), "total": int64(1), "cid": otherID[:], "data": other})
+	e.Handle(p, record{"t": "aput", "q": int64(6), "scope": scope, "aid": aid, "idx": int64(0), "total": int64(1), "cid": otherID[:], "data": other})
 	got = drainPeer(p)
 	if len(got) != 1 || got[0]["t"] != "err" || got[0]["code"] != "conflict" {
 		t.Fatalf("first-write conflict: %#v", got)
