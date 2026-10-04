@@ -58,7 +58,6 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-          cache: gradle
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
