@@ -34,7 +34,17 @@ type Store struct {
 	closed bool
 }
 
+// OpenStore opens a store with SQLite synchronous=FULL.
 func OpenStore(path string) (*Store, error) {
+	return openStore(path, "FULL")
+}
+
+func openStore(path, synchronous string) (*Store, error) {
+	mode, err := sqliteSynchronousMode(synchronous)
+	if err != nil {
+		return nil, err
+	}
+	// Validate before creating files, changing permissions, or opening SQLite.
 	if path != ":memory:" {
 		dir := filepath.Dir(path)
 		if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -77,10 +87,15 @@ func OpenStore(path string) (*Store, error) {
 			db.Close()
 			return nil, err
 		}
-		if _, err := db.ExecContext(ctx, "PRAGMA synchronous=FULL"); err != nil {
-			db.Close()
-			return nil, err
-		}
+	}
+	// Use only fixed statements, never configuration text as SQL.
+	synchronousPragma := "PRAGMA synchronous=FULL"
+	if mode == "NORMAL" {
+		synchronousPragma = "PRAGMA synchronous=NORMAL"
+	}
+	if _, err := db.ExecContext(ctx, synchronousPragma); err != nil {
+		db.Close()
+		return nil, err
 	}
 	if err := s.createSchema(ctx); err != nil {
 		db.Close()

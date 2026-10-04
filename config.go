@@ -41,6 +41,7 @@ type Config struct {
 	TLSCertFile       string
 	TLSKeyFile        string
 	DataPath          string
+	SQLiteSynchronous string // FULL or NORMAL; empty preserves the FULL default.
 	SourceURL         string
 	Token             string
 	TokenNext         string
@@ -90,6 +91,8 @@ func DefaultConfig() Config {
 		RateRecords:    50,
 		RatePushes:     10,
 		RateNewScopes:  6,
+
+		SQLiteSynchronous: "FULL",
 	}
 }
 
@@ -155,6 +158,10 @@ func LoadConfig() (Config, error) {
 	setString("SPOOL_TLS_CERT", &c.TLSCertFile)
 	setString("SPOOL_TLS_KEY", &c.TLSKeyFile)
 	setString("SPOOL_DATA_PATH", &c.DataPath)
+	setString("SPOOL_SQLITE_SYNCHRONOUS", &c.SQLiteSynchronous)
+	if c.SQLiteSynchronous == "" {
+		return Config{}, errors.New("SPOOL_SQLITE_SYNCHRONOUS must be FULL or NORMAL")
+	}
 	setString("SPOOL_SOURCE_URL", &c.SourceURL)
 	setString("SPOOL_TOKEN", &c.Token)
 	setString("SPOOL_TOKEN_NEXT", &c.TokenNext)
@@ -267,6 +274,9 @@ func LoadConfig() (Config, error) {
 }
 
 func (c Config) Validate() error {
+	if _, err := sqliteSynchronousMode(c.SQLiteSynchronous); err != nil {
+		return err
+	}
 	if c.ListenAddr == "" || c.DataPath == "" {
 		return errors.New("listen address and data path are required")
 	}
@@ -336,6 +346,10 @@ func (c Config) EffectiveMetricsToken() string {
 }
 
 func (c Config) String() string {
+	synchronous, err := sqliteSynchronousMode(c.SQLiteSynchronous)
+	if err != nil {
+		synchronous = "invalid"
+	}
 	commons := "off"
 	if c.Commons != nil {
 		commons = "on"
@@ -344,7 +358,18 @@ func (c Config) String() string {
 	if c.DataPath == ":memory:" {
 		store = "memory"
 	}
-	return fmt.Sprintf("listen=%s maxBlob=%d maxRecord=%d maxScopes=%d maxFrames=%d maxTTLMS=%d powBits=%d attachments=%t commons=%s moderation=%t store=%s token=%t",
+	return fmt.Sprintf("listen=%s maxBlob=%d maxRecord=%d maxScopes=%d maxFrames=%d maxTTLMS=%d powBits=%d attachments=%t commons=%s moderation=%t store=%s sqliteSynchronous=%s token=%t",
 		c.ListenAddr, c.MaxBlob, c.MaxRecord, c.MaxScopes, c.MaxFramesCap, c.MaxTTLMS, c.PowBits,
-		c.AttachmentsEnabled(), commons, c.RequireModeration, store, c.Token != "")
+		c.AttachmentsEnabled(), commons, c.RequireModeration, store, synchronous, c.Token != "")
+}
+
+func sqliteSynchronousMode(value string) (string, error) {
+	switch value {
+	case "", "FULL":
+		return "FULL", nil
+	case "NORMAL":
+		return "NORMAL", nil
+	default:
+		return "", errors.New("SPOOL_SQLITE_SYNCHRONOUS must be FULL or NORMAL")
+	}
 }

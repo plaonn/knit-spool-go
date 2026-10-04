@@ -50,7 +50,14 @@ func drainPeer(p *Peer) []record {
 }
 
 func TestFramesEvictOldestFanOutAndPersist(t *testing.T) {
+	for _, mode := range []string{"FULL", "NORMAL"} {
+		t.Run(mode, func(t *testing.T) { testFramesEvictOldestFanOutAndPersist(t, mode) })
+	}
+}
+
+func testFramesEvictOldestFanOutAndPersist(t *testing.T, mode string) {
 	c := testConfig(t)
+	c.SQLiteSynchronous = mode
 	path := filepath.Join(t.TempDir(), "spool.db")
 	c.DataPath = path
 	e, err := NewEngine(c)
@@ -363,7 +370,15 @@ func TestCommonsRotationAndDisableReleasePinnedScope(t *testing.T) {
 }
 
 func TestAttachmentChunkRoundTripAndConflict(t *testing.T) {
+	for _, mode := range []string{"FULL", "NORMAL"} {
+		t.Run(mode, func(t *testing.T) { testAttachmentChunkRoundTripAndConflict(t, mode) })
+	}
+}
+
+func testAttachmentChunkRoundTripAndConflict(t *testing.T, mode string) {
 	c := testConfig(t)
+	c.SQLiteSynchronous = mode
+	c.DataPath = filepath.Join(t.TempDir(), "spool.db")
 	c.MaxAttachBytes = 1024
 	c.MaxBytes = 1 << 20
 	e := newTestEngine(t, c)

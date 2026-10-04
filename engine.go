@@ -136,7 +136,7 @@ func NewEngine(cfg Config) (*Engine, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	store, err := OpenStore(cfg.DataPath)
+	store, err := openStore(cfg.DataPath, cfg.SQLiteSynchronous)
 	if err != nil {
 		return nil, err
 	}

@@ -36,6 +36,7 @@ Settings are environment variables. Invalid or conflicting settings stop startup
 | `SPOOL_TLS_CERT`, `SPOOL_TLS_KEY` | unset | TLS certificate and private-key paths; configure both together. |
 | `SPOOL_DATA_PATH` | `./data/spool.db` | SQLite database file. Use this or `SPOOL_DATA_DIR`, not both. |
 | `SPOOL_DATA_DIR` | unset | Private data directory; database file is `spool.db`. |
+| `SPOOL_SQLITE_SYNCHRONOUS` | `FULL` | SQLite synchronization mode: exactly `FULL` or `NORMAL`. `NORMAL` explicitly opts into reduced power-loss durability. |
 | `SPOOL_SOURCE_URL` | this repository | Corresponding source link returned by `/source`; set it for modified builds. |
 | `SPOOL_TOKEN` | unset | Optional WebSocket bearer token. An unset token makes the local service public to reachable clients. |
 | `SPOOL_TOKEN_NEXT` | unset | Optional second token for rotation; requires a different `SPOOL_TOKEN`. |
@@ -69,6 +70,18 @@ Settings are environment variables. Invalid or conflicting settings stop startup
 | `SPOOL_COMMONS_RATE_PUSHES` | `20` | Commons-wide frame and attachment write rate per second (four-times burst). |
 
 Data directories and database files are created with owner-only permissions. Back up a persistent store after stopping the service so SQLite can checkpoint its WAL.
+
+### SQLite durability
+
+File-backed stores use SQLite WAL mode with `synchronous=FULL` by default. To opt into `NORMAL`, set `SPOOL_SQLITE_SYNCHRONOUS=NORMAL` in the service environment and restart it. Only uppercase `FULL` and `NORMAL` are accepted; empty or unsupported environment values stop startup before the store is opened or modified.
+
+With WAL and `NORMAL`, SQLite avoids synchronizing the WAL after each transaction. A power failure or operating-system crash can lose recent acknowledged writes, including relay copies of frames and attachment chunks. Choose this mode only when that loss is acceptable. Checkpoint synchronization and storage I/O still occur, so checkpoint latency and occasional write stalls remain; `NORMAL` does not guarantee a latency bound. See [SQLite's synchronous documentation](https://www.sqlite.org/pragma.html#pragma_synchronous).
+
+Run `knit-spool check` with the same environment as the service and inspect `sqliteSynchronous=FULL` or `sqliteSynchronous=NORMAL`. This command validates configuration without opening the database. The startup log also reports the configured mode after the store opens successfully. A separate SQLite shell has its own connection setting and cannot verify the running service's mode.
+
+To roll back, set `SPOOL_SQLITE_SYNCHRONOUS=FULL` (or remove the variable) and restart the service. The mode is applied each time the store opens; no schema migration or database replacement is needed. Switching back cannot recover writes already lost. Go callers using `OpenStore(path)` or omitting `Config.SQLiteSynchronous` retain FULL behavior; use `NewEngine` with `Config.SQLiteSynchronous` set to `"NORMAL"` to opt in.
+
+This setting changes synchronization only. Attachment support and limits remain unchanged: the default per-scope budget is 16 MiB, the chunk payload cap is 49,221 bytes, and the read batch cap is 32 chunks.
 
 ### Credentials and commons
 
