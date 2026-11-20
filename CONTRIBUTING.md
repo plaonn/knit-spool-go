@@ -13,9 +13,21 @@ All four existing GitHub Actions checks must pass before merging:
 - `Linux arm cgo-free build`
 - `Official protocol conformance and Kotlin differential`
 
-See [the workflow](.github/workflows/ci.yml) for the commands and pinned protocol reference. Run `go test ./...` and `go vet ./...` from the repository root for Go changes; reference checks are described in [README.md](README.md#conformance-and-ci). Documentation changes also go through the four CI checks.
+See [the workflow](.github/workflows/ci.yml) for the commands; the pinned protocol reference is in [`knit-reference.lock`](knit-reference.lock). Run `go test ./...` and `go vet ./...` from the repository root for Go changes; reference checks are described in [README.md](README.md#conformance-and-ci). Documentation changes also go through the four CI checks.
 
 The main ruleset requires a pull request with **zero required approving reviews**, so the solo maintainer can merge their own PR after checking the final diff and CI results. Force pushes and deletion of `main` are blocked, with no bypass actors configured. Requiring the branch to be up to date with the base is not enabled. Resolve conflicts and rerun relevant validation when incorporating newer changes; do not disable protection to get a change through.
+
+### Tracking upstream Knit
+
+[`knit-reference.lock`](knit-reference.lock) is the single source of the pinned protocol specification (by commit, since upstream amends the text without changing its revision label) and of the official Kotlin reference/conformance snapshot. CI, `scripts/verify-reference.sh` and the README read or are checked against it.
+
+The [Upstream drift workflow](.github/workflows/upstream-drift.yml) runs every Monday and on demand. It compares the pins with upstream and maintains one open issue labelled `upstream-drift`:
+
+- spool-side (`S-`) and shared (`B-`) rule changes graded `must-review`, `review` or `informational` by RFC 2119 keyword, each with the change log's *Spools* ask, plus protocol-version and Section 13 vector changes;
+- change-log entries added since the pin, and reference renames, releases and commits past the pin;
+- the conformance and differential checks against the latest reference release, without failing the workflow.
+
+Body updates do not notify; the workflow comments when the specification commit, reference release or level changes. Levels are triage aids: many MUST rules belong to optional features a spool conforms to by not advertising them. To resolve drift, record the triage decision in the issue, land any required change, then update every lock value and the README pin in one PR; the next run closes the issue. Dependabot proposes Go module and GitHub Actions updates separately.
 
 ### Versions, tags, and releases
 
@@ -43,9 +55,21 @@ If that option is unavailable, ask the maintainer how to arrange a private chann
 
 `main`에서 작업 브랜치를 만들고 `main` 대상 PR을 엽니다. 변경 목적과 영향을 설명하고 관련 검증 결과를 남깁니다. 작업 중에는 초안 PR을 사용할 수 있습니다.
 
-위에 나열한 기존 GitHub Actions 검사 4개가 모두 통과해야 병합할 수 있습니다. 명령과 고정된 프로토콜 참조는 [workflow](.github/workflows/ci.yml)를 확인하세요. Go 변경은 저장소 루트에서 `go test ./...`, `go vet ./...`를 실행하고, 참조 검증은 [README](README.md#conformance-and-ci)를 따릅니다. 문서 변경도 같은 CI 4개를 거칩니다.
+위에 나열한 기존 GitHub Actions 검사 4개가 모두 통과해야 병합할 수 있습니다. 명령은 [workflow](.github/workflows/ci.yml), 고정된 프로토콜 참조는 [`knit-reference.lock`](knit-reference.lock)을 확인하세요. Go 변경은 저장소 루트에서 `go test ./...`, `go vet ./...`를 실행하고, 참조 검증은 [README](README.md#conformance-and-ci)를 따릅니다. 문서 변경도 같은 CI 4개를 거칩니다.
 
 main 보호 규칙은 PR을 요구하며 **필수 승인 리뷰 수는 0**입니다. 1인 관리자는 최종 diff와 CI 결과를 확인한 뒤 자신의 PR을 병합할 수 있습니다. main의 강제 push와 삭제는 차단되며 우회 대상은 없습니다. base 최신 상태를 강제하는 옵션은 사용하지 않습니다. 새 변경을 반영할 때 충돌을 해결하고 관련 검증을 다시 수행하며, 병합을 위해 보호 규칙을 해제하지 않습니다.
+
+### 업스트림 Knit 추적
+
+[`knit-reference.lock`](knit-reference.lock)이 고정한 프로토콜 명세(revision 라벨이 그대로인 채 본문이 바뀌므로 commit 기준)와 공식 Kotlin reference/conformance 스냅샷의 단일 기준입니다. CI, `scripts/verify-reference.sh`, README가 이 파일을 읽거나 이 파일과 일치하는지 검사합니다.
+
+[Upstream drift workflow](.github/workflows/upstream-drift.yml)는 매주 월요일과 수동 실행 시 pin과 업스트림을 비교하고, `upstream-drift` 라벨이 붙은 열린 이슈 하나를 관리합니다.
+
+- spool(`S-`)·공통(`B-`) 규칙 변경을 RFC 2119 키워드로 `must-review`, `review`, `informational`로 분류하고 change log의 *Spools* 요구를 함께 표시합니다. 프로토콜 버전과 13절 테스트 벡터 변경도 봅니다.
+- pin 이후 추가된 change log 항목, reference 저장소 이름 변경·릴리스·커밋을 보고합니다.
+- 최신 reference 릴리스로 conformance·differential 검사를 실행하되, 실패해도 workflow를 실패시키지 않습니다.
+
+본문 갱신은 알림이 없으므로 명세 commit, reference 릴리스, 등급이 바뀌면 댓글을 남깁니다. 등급은 분류 보조일 뿐이며, 많은 MUST 규칙은 광고하지 않으면 지키는 선택 기능입니다. 이슈에 판단을 기록하고 필요한 변경을 반영한 뒤, lock의 모든 값과 README pin을 한 PR에서 갱신합니다. 다음 실행이 이슈를 닫습니다. Go 모듈과 GitHub Actions 업데이트는 Dependabot이 따로 제안합니다.
 
 ### 버전, 태그, 릴리스
 

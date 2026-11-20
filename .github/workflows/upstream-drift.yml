@@ -1,0 +1,151 @@
+name: Upstream drift
+
+# Weekly check for upstream Knit changes past the pins in knit-reference.lock.
+# It reports; it never moves a pin. See CONTRIBUTING.md#tracking-upstream-knit.
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-drift
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    name: Compare pins with upstream Knit
+    runs-on: ubuntu-latest
+    outputs:
+      drift: ${{ steps.drift.outputs.drift }}
+      level: ${{ steps.drift.outputs.level }}
+      drift_key: ${{ steps.drift.outputs.drift_key }}
+      reference_repo: ${{ steps.drift.outputs.reference_repo }}
+      reference_release: ${{ steps.drift.outputs.reference_release }}
+      reference_release_commit: ${{ steps.drift.outputs.reference_release_commit }}
+      reference_release_newer: ${{ steps.drift.outputs.reference_release_newer }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Build drift report
+        id: drift
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/drift"
+          python3 -I scripts/knit_drift.py \
+            --report "$RUNNER_TEMP/drift/report.md" \
+            --issue-body "$RUNNER_TEMP/drift/issue-body.md" \
+            --run-url "$RUN_URL"
+          cat "$RUNNER_TEMP/drift/report.md" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: drift-report
+          path: ${{ runner.temp }}/drift/
+
+  latest-conformance:
+    name: Latest reference release conformance
+    needs: detect
+    if: needs.detect.outputs.reference_release_newer == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      result: ${{ steps.verify.outcome }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Checkout latest reference release
+        env:
+          REFERENCE_DIR: ${{ runner.temp }}/knit-spool-reference
+          REFERENCE_REPO: ${{ needs.detect.outputs.reference_repo }}
+          REFERENCE_COMMIT: ${{ needs.detect.outputs.reference_release_commit }}
+        run: |
+          git clone --filter=blob:none "https://github.com/$REFERENCE_REPO.git" "$REFERENCE_DIR"
+          git -C "$REFERENCE_DIR" checkout --detach "$REFERENCE_COMMIT"
+      - name: Run conformance and differential checks against it
+        id: verify
+        continue-on-error: true
+        env:
+          KNIT_REFERENCE_UNPINNED: "1"
+        run: scripts/verify-reference.sh "${{ runner.temp }}/knit-spool-reference"
+
+  report:
+    name: Update tracking issue
+    needs: [detect, latest-conformance]
+    if: always() && needs.detect.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: drift-report
+          path: drift
+      - name: Create, update or close the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DRIFT: ${{ needs.detect.outputs.drift }}
+          LEVEL: ${{ needs.detect.outputs.level }}
+          DRIFT_KEY: ${{ needs.detect.outputs.drift_key }}
+          RELEASE: ${{ needs.detect.outputs.reference_release }}
+          CONFORMANCE_JOB: ${{ needs.latest-conformance.result }}
+          CONFORMANCE: ${{ needs.latest-conformance.outputs.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          label=upstream-drift
+          gh label create "$label" --color D93F0B \
+            --description "Upstream Knit moved past knit-reference.lock" --force >/dev/null
+          issue=$(gh issue list --label "$label" --state open --limit 1 --json number --jq '.[0].number // empty')
+
+          if [[ "$DRIFT" != true ]]; then
+            if [[ -n "$issue" ]]; then
+              gh issue close "$issue" --comment "No drift on [this run]($RUN_URL): the pins match upstream."
+            fi
+            exit 0
+          fi
+
+          body=drift/issue-body.md
+          {
+            echo
+            echo "## Latest reference conformance"
+            echo
+            case "$CONFORMANCE_JOB:$CONFORMANCE" in
+              success:success) echo "Passed against reference release \`$RELEASE\`." ;;
+              success:failure) echo "**Failed** against reference release \`$RELEASE\`. A failure can also come from a changed runner interface or an intended behavior change in the Kotlin reference; see the [run log]($RUN_URL)." ;;
+              skipped:*) echo "Not run: no reference release newer than the pin." ;;
+              *) echo "Did not complete ($CONFORMANCE_JOB); see the [run log]($RUN_URL)." ;;
+            esac
+            echo
+            echo "_Updated by [upstream drift run]($RUN_URL)._"
+            echo
+            echo "<!-- drift-key: $DRIFT_KEY -->"
+          } >> "$body"
+
+          title="Upstream Knit drift: $LEVEL"
+          if [[ -n "$issue" ]]; then
+            previous=$(gh issue view "$issue" --json body --jq .body | tr -d '\r' | sed -n 's/^<!-- drift-key: \(.*\) -->$/\1/p')
+            gh issue edit "$issue" --title "$title" --body-file "$body"
+            # Body edits notify nobody; comment when the drift itself changed.
+            if [[ "$previous" != "$DRIFT_KEY" ]]; then
+              gh issue comment "$issue" --body "Upstream drift changed (\`$DRIFT_KEY\`); the description has the new report. [Run]($RUN_URL)"
+            fi
+          else
+            gh issue create --title "$title" --label "$label" --body-file "$body"
+          fi
