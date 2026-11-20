@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -15,42 +18,49 @@ import (
 )
 
 func main() {
-	if err := run(os.Args[1:]); err != nil {
+	if err := run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func run(args []string) error {
+const usage = "usage: knit-spool [run|check|commons-invite [--link-from-stdin]]"
+
+func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	command := "run"
 	if len(args) > 0 {
 		command = args[0]
 		args = args[1:]
 	}
-	if len(args) != 0 {
-		return errors.New("usage: knit-spool [run|check|commons-invite]")
-	}
 	switch command {
 	case "check":
+		if len(args) != 0 {
+			return errors.New(usage)
+		}
 		cfg, err := spool.LoadConfig()
 		if err != nil {
 			return err
 		}
-		fmt.Println(cfg.String())
+		fmt.Fprintln(stdout, cfg.String())
 		for _, warning := range cfg.Warnings() {
-			fmt.Fprintln(os.Stderr, "warning:", warning)
+			fmt.Fprintln(stderr, "warning:", warning)
 		}
 		return nil
 	case "commons-invite":
-		invite, id, err := spool.NewCommonsInvite()
-		if err != nil {
-			return err
+		switch {
+		case len(args) == 0:
+			return commonsInvite(stdout, stderr)
+		case len(args) == 1 && args[0] == "--link-from-stdin":
+			return relayLinkFromStdin(stdin, stdout, stderr)
+		default:
+			return errors.New(usage)
 		}
-		fmt.Printf("invite: %s\nSPOOL_COMMONS_ID=%s\n", invite, spool.HexID(id[:]))
-		return nil
 	case "run":
+		if len(args) != 0 {
+			return errors.New(usage)
+		}
 	default:
-		return fmt.Errorf("unknown command %q; usage: knit-spool [run|check|commons-invite]", command)
+		return fmt.Errorf("unknown command %q; %s", command, usage)
 	}
 	cfg, err := spool.LoadConfig()
 	if err != nil {
@@ -109,4 +119,73 @@ func runTicker(ctx context.Context, interval time.Duration, fn func()) {
 			fn()
 		}
 	}
+}
+
+const linkWarning = "the link carries the room secret and, when SPOOL_TOKEN is set, this relay's access token; share it only with people allowed to join"
+
+// commonsInvite mints a new commons secret, and a relay invite link for it when SPOOL_PUBLIC_URL is set.
+func commonsInvite(stdout, stderr io.Writer) error {
+	settings, err := spool.LoadRelayInviteSettings()
+	if err != nil {
+		return err
+	}
+	invite, id, err := spool.NewCommonsInvite()
+	if err != nil {
+		return err
+	}
+	secret, _, err := spool.DecodeCommonsInvite(invite)
+	if err != nil {
+		return err
+	}
+	var link, warning string
+	if settings.PublicURL != "" {
+		if link, warning, err = spool.MintRelayInvite(settings, secret); err != nil {
+			return err
+		}
+	}
+	fmt.Fprintf(stdout, "invite: %s\n", invite)
+	if link != "" {
+		fmt.Fprintf(stdout, "link: %s\n", link)
+	}
+	fmt.Fprintf(stdout, "SPOOL_COMMONS_ID=%s\n", spool.HexID(id[:]))
+	switch {
+	case link == "":
+		fmt.Fprintln(stderr, "note: set SPOOL_PUBLIC_URL (wss://host/spool/v1) to also print a relay invite link")
+	default:
+		fmt.Fprintln(stderr, "warning:", linkWarning)
+	}
+	if warning != "" {
+		fmt.Fprintln(stderr, "warning:", warning)
+	}
+	return nil
+}
+
+// relayLinkFromStdin mints a relay invite link for an existing room from its knit-commons:v1 invite,
+// read from standard input so the secret stays out of arguments and shell history.
+func relayLinkFromStdin(stdin io.Reader, stdout, stderr io.Writer) error {
+	settings, err := spool.LoadRelayInviteSettings()
+	if err != nil {
+		return err
+	}
+	if settings.PublicURL == "" {
+		return errors.New("--link-from-stdin needs SPOOL_PUBLIC_URL (wss://host/spool/v1)")
+	}
+	line, err := bufio.NewReader(io.LimitReader(stdin, 4096)).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	secret, id, err := spool.DecodeCommonsInvite(strings.TrimSpace(line))
+	if err != nil {
+		return fmt.Errorf("standard input: %w", err)
+	}
+	link, warning, err := spool.MintRelayInvite(settings, secret)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "link: %s\nSPOOL_COMMONS_ID=%s\n", link, spool.HexID(id[:]))
+	fmt.Fprintln(stderr, "warning:", linkWarning)
+	if warning != "" {
+		fmt.Fprintln(stderr, "warning:", warning)
+	}
+	return nil
 }

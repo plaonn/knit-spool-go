@@ -8,7 +8,7 @@ The wire contract is the normative [Knit Spool Protocol](https://github.com/getk
 
 These pins live in [`knit-reference.lock`](knit-reference.lock), which CI and the scripts read; a test keeps this paragraph in step with it. Upstream keeps amending the specification under the same protocol version, so a weekly [upstream drift check](CONTRIBUTING.md#tracking-upstream-knit) reports what changed since the pins.
 
-The service implements the required protocol and one commons room, advertised in HELLO as both `commons` and `rooms`. It does not implement the optional capabilities added since: several or live-changed commons rooms, TURN credentials, entitlement tickets, STUN, casts, the signal lane (`sig`) or a per-scope subscriber cap. A spool conforms by not advertising them, so clients fall back as the specification describes. `commons-invite` prints the `knit-commons:v1:` invite but not the relay invite link that the specification suggests daemons print beside it.
+The service implements the required protocol and one commons room, advertised in HELLO as both `commons` and `rooms`. It does not implement the optional capabilities added since: several or live-changed commons rooms, TURN credentials, entitlement tickets, STUN, casts, the signal lane (`sig`) or a per-scope subscriber cap. A spool conforms by not advertising them, so clients fall back as the specification describes. `commons-invite` prints the [relay invite link](https://github.com/getknit/knit/blob/main/docs/RELAY_INVITE.md) beside the `knit-commons:v1:` invite when `SPOOL_PUBLIC_URL` is set; it never writes the experimental ticket fields.
 
 ## Build and run
 
@@ -42,6 +42,7 @@ Settings are environment variables. Invalid or conflicting settings stop startup
 | `SPOOL_DATA_DIR` | unset | Private data directory; database file is `spool.db`. |
 | `SPOOL_SQLITE_SYNCHRONOUS` | `FULL` | SQLite synchronization mode: exactly `FULL` or `NORMAL`. `NORMAL` explicitly opts into reduced power-loss durability. |
 | `SPOOL_SOURCE_URL` | this repository | Corresponding source link returned by `/source`; set it for modified builds. |
+| `SPOOL_PUBLIC_URL` | unset | Public `wss://host[:port]/spool/v1` address clients dial, without a query. Used only by `commons-invite` to print a relay invite link; `SPOOL_TOKEN` is appended as `?k=`. |
 | `SPOOL_TOKEN` | unset | Optional WebSocket bearer token. An unset token makes the local service public to reachable clients. |
 | `SPOOL_TOKEN_NEXT` | unset | Optional second token for rotation; requires a different `SPOOL_TOKEN`. |
 | `SPOOL_METRICS_TOKEN` | unset | Separate optional metrics credential. |
@@ -98,6 +99,20 @@ Generate a commons invite once and provide it only to people authorized to join 
 ```
 
 The command prints an invite secret and its derived `SPOOL_COMMONS_ID`. The server stores only the ID and never advertises the scope ID in `hello`. Keep the invite private; it is the capability clients use to discover the shared scope.
+
+When `SPOOL_PUBLIC_URL` is set, the command also prints a relay invite link, `https://getknit.app/r#…`. One tap in Knit adds this relay with its token and joins the room. The link carries `SPOOL_PUBLIC_URL` with `?k=` and `SPOOL_TOKEN`, the room secret, and `SPOOL_COMMONS_NAME` when that name is one line of at most 32 characters. Treat the link like the token and the invite together: it is a bearer credential, and the browser never sends the part after `#` to `getknit.app`. Run the command with the service environment so the token never appears in arguments:
+
+```sh
+sudo sh -c 'set -a; . /etc/knit-spool/knit-spool.env; exec /usr/local/bin/knit-spool commons-invite'
+```
+
+For a room that already exists, pass its `knit-commons:v1:` invite on standard input to print only the link:
+
+```sh
+sudo sh -c 'set -a; . /etc/knit-spool/knit-spool.env; exec /usr/local/bin/knit-spool commons-invite --link-from-stdin' < invite.txt
+```
+
+To withdraw links already shared, rotate `SPOOL_TOKEN` or the room secret. Links cannot be revoked one by one.
 
 ## Operations
 

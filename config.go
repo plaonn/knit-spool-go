@@ -166,6 +166,12 @@ func LoadConfig() (Config, error) {
 	setString("SPOOL_TOKEN", &c.Token)
 	setString("SPOOL_TOKEN_NEXT", &c.TokenNext)
 	setString("SPOOL_METRICS_TOKEN", &c.MetricsToken)
+	if v := os.Getenv("SPOOL_PUBLIC_URL"); v != "" {
+		// Used only by `commons-invite`; validated here too so `check` reports a bad value.
+		if err := ValidatePublicURL(v); err != nil {
+			return Config{}, err
+		}
+	}
 	_, hasDataDir := os.LookupEnv("SPOOL_DATA_DIR")
 	_, hasDataPath := os.LookupEnv("SPOOL_DATA_PATH")
 	if hasDataDir && hasDataPath {
