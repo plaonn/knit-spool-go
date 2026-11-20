@@ -31,3 +31,6 @@ go.work.sum
 # .idea/
 # .vscode/
 __pycache__/
+
+# Release build output (.github/workflows/release.yml). Ignored so the build is not stamped +dirty.
+/dist/
