@@ -1,6 +1,7 @@
 package spool
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"os"
 	"path/filepath"
@@ -447,6 +448,7 @@ func TestPowGateAndCommonsArePinned(t *testing.T) {
 	commonsID := CommonsScopeID(secret)
 	cc := &CommonsConfig{ScopeID: commonsID, Name: "Home", MaxFrames: 2, TTLMS: 60_000, MaxBlob: 1024, PushRate: 100}
 	c.Commons = cc
+	c.Token = "conformance-token"
 	e2 := newTestEngine(t, c)
 	hello := e2.Hello()
 	common, ok := hello.nested("commons")
@@ -465,5 +467,55 @@ func TestPowGateAndCommonsArePinned(t *testing.T) {
 	boundary, ok := got[0].nested("bounds")
 	if !ok || boundary["maxFrames"] != 2 || boundary["ttlMs"] != int64(60_000) || boundary["maxBlob"] != 1024 {
 		t.Fatalf("commons bounds were not pinned: %#v", got[0])
+	}
+}
+
+func TestCommonsHelloAdvertisesRoomsAndHidesNamesWithoutToken(t *testing.T) {
+	secret := make([]byte, 32)
+	for i := range secret {
+		secret[i] = 10
+	}
+	cc := &CommonsConfig{ScopeID: CommonsScopeID(secret), Name: "Home", MaxFrames: 2, TTLMS: 60_000, MaxBlob: 1024, Attach: true, PushRate: 100}
+	for _, token := range []string{"", "secret-token"} {
+		c := testConfig(t)
+		c.Commons = cc
+		c.Token = token
+		hello := newTestEngine(t, c).Hello()
+		commons, ok := hello.nested("commons")
+		if !ok {
+			t.Fatalf("token=%q: no commons in %#v", token, hello)
+		}
+		rooms, ok := hello["rooms"].([]any)
+		if !ok || len(rooms) != 1 {
+			t.Fatalf("token=%q: rooms must list the one room: %#v", token, hello["rooms"])
+		}
+		room := rooms[0].(record)
+		tag := CommonsTag(cc.ScopeID)
+		if !bytes.Equal(room["tag"].([]byte), tag) {
+			t.Fatalf("token=%q: room tag %x, want %x", token, room["tag"], tag)
+		}
+		// S-7.4-15: commons is rooms[0] without its tag.
+		for key, value := range commons {
+			if room[key] != value {
+				t.Fatalf("token=%q: commons[%s]=%v but rooms[0][%s]=%v", token, key, value, key, room[key])
+			}
+		}
+		if len(room) != len(commons)+1 {
+			t.Fatalf("token=%q: rooms[0] %#v has fields beyond commons %#v and tag", token, room, commons)
+		}
+		_, named := commons["name"]
+		if named != (token != "") {
+			t.Fatalf("token=%q: commons name advertised=%t (S-7.4-19)", token, named)
+		}
+		if got := len(c.Warnings()); got != map[bool]int{true: 0, false: 1}[token != ""] {
+			t.Fatalf("token=%q: %d warnings", token, got)
+		}
+		encoded, err := encodeRecord(hello)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(encoded, cc.ScopeID[:]) {
+			t.Fatalf("token=%q: HELLO carries the commons scope id", token)
+		}
 	}
 }

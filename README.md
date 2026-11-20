@@ -4,9 +4,11 @@ A small, cgo-free Go service implementing the Knit Spool Protocol v1. It stores 
 
 ## Protocol source
 
-The wire contract is the normative [Knit Spool Protocol](https://github.com/getknit/knit/blob/6f1a4cbc49bc6d7526d0dec5b8b20c473bf3b307/docs/SPOOL_PROTOCOL.md), protocol v1, revision `2026-08-30` at spec commit `6f1a4cbc49bc6d7526d0dec5b8b20c473bf3b307`. The implementation records the official Kotlin spool and conformance CLI snapshot from `getknit/knit-spool` at commit [`0c51be517db5a0ff90587c6e5045bdd019fe4b40`](https://github.com/getknit/knit-spool/commit/0c51be517db5a0ff90587c6e5045bdd019fe4b40). Protocol behavior follows the specification; implementation-specific choices are cross-checked against that Kotlin reference in CI.
+The wire contract is the normative [Knit Spool Protocol](https://github.com/getknit/knit/blob/eb9bfe3d9e357bfed1cc9de1f2b8f9d3026b77bf/docs/SPOOL_PROTOCOL.md), protocol v1, revision `2026-10-31` at spec commit `eb9bfe3d9e357bfed1cc9de1f2b8f9d3026b77bf`. The implementation records the official Kotlin spool and conformance CLI snapshot from `getknit/knit-spool` release `v0.8.0`, commit [`b4d3c6ec2633fc14f95064f5d0f142899beb235c`](https://github.com/getknit/knit-spool/commit/b4d3c6ec2633fc14f95064f5d0f142899beb235c). Protocol behavior follows the specification; implementation-specific choices are cross-checked against that Kotlin reference in CI.
 
 These pins live in [`knit-reference.lock`](knit-reference.lock), which CI and the scripts read; a test keeps this paragraph in step with it. Upstream keeps amending the specification under the same protocol version, so a weekly [upstream drift check](CONTRIBUTING.md#tracking-upstream-knit) reports what changed since the pins.
+
+The service implements the required protocol and one commons room, advertised in HELLO as both `commons` and `rooms`. It does not implement the optional capabilities added since: several or live-changed commons rooms, TURN credentials, entitlement tickets, STUN, casts, the signal lane (`sig`) or a per-scope subscriber cap. A spool conforms by not advertising them, so clients fall back as the specification describes. `commons-invite` prints the `knit-commons:v1:` invite but not the relay invite link that the specification suggests daemons print beside it.
 
 ## Build and run
 
@@ -64,7 +66,7 @@ Settings are environment variables. Invalid or conflicting settings stop startup
 | `SPOOL_TRUST_PROXY` | `false` | Trust the proxy-appended `X-Forwarded-For` address for per-IP limits. Enable only behind a trusted proxy. |
 | `SPOOL_REQUIRE_MODERATION` | `false` | Advertise a client moderation request. The relay cannot verify client-side screening. |
 | `SPOOL_COMMONS_ID` | unset | Operator-pinned commons scope ID as 64 hex characters. Obtain an invite with `knit-spool commons-invite`. |
-| `SPOOL_COMMONS_NAME` | unset | Optional commons display name. |
+| `SPOOL_COMMONS_NAME` | unset | Optional commons display name, advertised only when `SPOOL_TOKEN` is set: a public HELLO keeps room names off. |
 | `SPOOL_COMMONS_MAX_FRAMES` | `500` | Pinned commons frame limit. |
 | `SPOOL_COMMONS_TTL_MS` | `86400000` | Pinned commons frame TTL (24 hours). |
 | `SPOOL_COMMONS_MAX_BLOB` | `SPOOL_MAX_BLOB` | Pinned commons blob-size limit. |

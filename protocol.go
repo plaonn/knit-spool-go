@@ -83,8 +83,11 @@ func encodeValue(out *bytes.Buffer, value any, path string) error {
 	case []any:
 		writeCBORHead(out, 4, uint64(len(v)))
 		childPath := ""
-		if path == "subs" {
+		switch path {
+		case "subs":
 			childPath = "sub"
+		case "rooms":
+			childPath = "room"
 		}
 		for _, item := range v {
 			if err := encodeValue(out, item, childPath); err != nil {
@@ -128,7 +131,7 @@ func orderedMapKeys(values map[string]any, path string) []string {
 	case "":
 		switch values["t"] {
 		case "hello":
-			ordered = []string{"t", "v", "min", "limits", "powBits", "commons", "moderation"}
+			ordered = []string{"t", "v", "min", "limits", "powBits", "commons", "rooms", "moderation"}
 		case "sub":
 			ordered = []string{"t", "q", "subs"}
 		case "digest":
@@ -164,6 +167,8 @@ func orderedMapKeys(values map[string]any, path string) []string {
 		ordered = []string{"maxFrames", "ttlMs", "maxBlob"}
 	case "commons":
 		ordered = []string{"name", "maxFrames", "ttlMs", "maxBlob", "attach"}
+	case "room":
+		ordered = []string{"tag", "name", "maxFrames", "ttlMs", "maxBlob", "attach"}
 	case "pow":
 		ordered = []string{"n", "d"}
 	case "sub":

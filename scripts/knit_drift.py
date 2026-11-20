@@ -261,7 +261,9 @@ def grade(spec_changed: bool, diff: SpecDiff | None, ref: ReferenceState) -> tup
             reasons.append(("review", f"reference release {ref.release_tag} is newer than the pinned commit"))
         else:
             reasons.append(("review", f"reference release {ref.release_tag} does not contain the pinned commit"))
-    if ref.commits_ahead:
+    # With releases, the release is the tracked unit: upstream's default branch is normally ahead of
+    # it, and spec changes it carries are already covered above. Commits still appear in the report.
+    if ref.commits_ahead and not ref.release_tag:
         reasons.append(("informational", f"reference default branch is {ref.commits_ahead} commit(s) past the pin"))
 
     level = "none"

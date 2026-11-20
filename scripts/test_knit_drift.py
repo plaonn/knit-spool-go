@@ -169,6 +169,8 @@ class GradeTest(unittest.TestCase):
         self.assertEqual(level, "review")
         self.assertIn("does not contain the pinned commit", reasons[0])
         self.assertEqual(kd.grade(False, None, reference(release_tag="v1", release_commit="a" * 40))[0], "none")
+        self.assertEqual(kd.grade(False, None, reference(release_tag="v1", release_commit="a" * 40,
+                                                         commits_ahead=18))[0], "none")
 
 
 class RenderTest(unittest.TestCase):
