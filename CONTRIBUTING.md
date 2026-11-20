@@ -29,6 +29,8 @@ The [Upstream drift workflow](.github/workflows/upstream-drift.yml) runs every M
 
 Body updates do not notify; the workflow comments when the specification commit, reference release or level changes. Levels are triage aids: many MUST rules belong to optional features a spool conforms to by not advertising them. To resolve drift, record the triage decision in the issue, land any required change, then update every lock value and the README pin in one PR; the next run closes the issue. Dependabot proposes Go module and GitHub Actions updates separately.
 
+The same workflow also runs the latest released Knit app against this daemon, on the JVM and without a device: [`scripts/knit-client-e2e.sh`](scripts/knit-client-e2e.sh) builds knit-spool, serves it over TLS, mints a relay invite link, and runs [`e2e/knit-client/KnitSpoolGoClientTest.kt`](e2e/knit-client/KnitSpoolGoClientTest.kt) inside a `getknit/knit` checkout, so Knit's own link parser, dialer and connection code join the commons room and exchange a frame. It does not fail the workflow; while it fails, a separate issue labelled `knit-client-e2e` stays open, with a comment when the release or the outcome changes, and the next passing run closes it. The test uses Knit's internal classes, so a failure may only mean those changed. Runs dispatched on another branch skip both issues, which is how to try a workflow change. Running the script locally needs JDK 21 and an Android SDK.
+
 ### Versions, tags, and releases
 
 Use `vMAJOR.MINOR.PATCH` tags. While the project is pre-1.0, use `v0.MINOR.PATCH`: patch releases for compatible fixes, minor releases for features or breaking changes, and explicitly describe every breaking change. Use a suffix such as `-rc.1` for a prerelease. A release version is separate from the wire protocol version.
@@ -70,6 +72,8 @@ main 보호 규칙은 PR을 요구하며 **필수 승인 리뷰 수는 0**입니
 - 최신 reference 릴리스로 conformance·differential 검사를 실행하되, 실패해도 workflow를 실패시키지 않습니다.
 
 본문 갱신은 알림이 없으므로 명세 commit, reference 릴리스, 등급이 바뀌면 댓글을 남깁니다. 등급은 분류 보조일 뿐이며, 많은 MUST 규칙은 광고하지 않으면 지키는 선택 기능입니다. 이슈에 판단을 기록하고 필요한 변경을 반영한 뒤, lock의 모든 값과 README pin을 한 PR에서 갱신합니다. 다음 실행이 이슈를 닫습니다. Go 모듈과 GitHub Actions 업데이트는 Dependabot이 따로 제안합니다.
+
+같은 workflow는 최신 Knit 앱 릴리스를 기기 없이 JVM에서 이 daemon에 접속시킵니다. [`scripts/knit-client-e2e.sh`](scripts/knit-client-e2e.sh)가 knit-spool을 빌드해 TLS로 띄우고 relay invite link를 만든 뒤, `getknit/knit` checkout 안에서 [`e2e/knit-client/KnitSpoolGoClientTest.kt`](e2e/knit-client/KnitSpoolGoClientTest.kt)를 실행합니다. Knit 자체의 링크 parser, dialer, connection 코드가 commons room에 들어가 frame을 주고받습니다. 실패해도 workflow를 실패시키지 않으며, 실패하는 동안 `knit-client-e2e` 라벨 이슈 하나를 열어 두고 릴리스나 결과가 바뀌면 댓글을 남깁니다. 다음에 통과하면 이슈를 닫습니다. 테스트가 Knit 내부 클래스를 쓰므로 실패가 그 클래스 변경 때문일 수도 있습니다. 다른 브랜치에서 수동 실행하면 두 이슈를 건드리지 않으므로 workflow 변경을 시험할 수 있습니다. 로컬에서 스크립트를 실행하려면 JDK 21과 Android SDK가 필요합니다.
 
 ### 버전, 태그, 릴리스
 
