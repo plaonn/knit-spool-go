@@ -4,7 +4,9 @@ A small, cgo-free Go service implementing the Knit Spool Protocol v1. It stores 
 
 ## Protocol source
 
-The wire contract is the normative [Knit Spool Protocol](https://github.com/getknit/knit/blob/main/docs/SPOOL_PROTOCOL.md), protocol v1, revision `2026-08-30`. The implementation records the official Kotlin spool and conformance CLI snapshot at commit [`0c51be517db5a0ff90587c6e5045bdd019fe4b40`](https://github.com/getknit/spool/commit/0c51be517db5a0ff90587c6e5045bdd019fe4b40). Protocol behavior follows the specification; implementation-specific choices are cross-checked against that Kotlin reference in CI.
+The wire contract is the normative [Knit Spool Protocol](https://github.com/getknit/knit/blob/6f1a4cbc49bc6d7526d0dec5b8b20c473bf3b307/docs/SPOOL_PROTOCOL.md), protocol v1, revision `2026-08-30` at spec commit `6f1a4cbc49bc6d7526d0dec5b8b20c473bf3b307`. The implementation records the official Kotlin spool and conformance CLI snapshot from `getknit/knit-spool` at commit [`0c51be517db5a0ff90587c6e5045bdd019fe4b40`](https://github.com/getknit/knit-spool/commit/0c51be517db5a0ff90587c6e5045bdd019fe4b40). Protocol behavior follows the specification; implementation-specific choices are cross-checked against that Kotlin reference in CI.
+
+These pins live in [`knit-reference.lock`](knit-reference.lock), which CI and the scripts read; a test keeps this paragraph in step with it. Upstream keeps amending the specification under the same protocol version, so a weekly [upstream drift check](CONTRIBUTING.md#tracking-upstream-knit) reports what changed since the pins.
 
 ## Build and run
 
@@ -117,10 +119,10 @@ For upgrades, stop the service, make a database backup, replace the binary, then
 
 The repository tests protocol vectors, storage boundaries, persistence and file permissions, connection lifecycle, authentication, rate limits, and HTTP operations. CI also builds the daemon without cgo for Linux amd64 and ARMv6 (`GOARM=6`), runs the official Knit Kotlin conformance CLI, and compares edge-case transcripts against the pinned Kotlin reference daemon.
 
-To run the official reference checks locally, provide the pinned [`getknit/spool`](https://github.com/getknit/spool) checkout:
+To run the official reference checks locally, provide a [`getknit/knit-spool`](https://github.com/getknit/knit-spool) checkout at the `REFERENCE_COMMIT` from `knit-reference.lock`:
 
 ```sh
-JAVA_HOME=/path/to/jdk-21 scripts/verify-reference.sh /path/to/getknit-spool
+JAVA_HOME=/path/to/jdk-21 scripts/verify-reference.sh /path/to/getknit-knit-spool
 ```
 
 The script builds the reference daemon and conformance CLI, starts both services on loopback with disposable stores, runs the CLI against both, and performs differential checks for eviction, tombstones, digest rejection, pull results, attachment idempotence/conflict, and unknown-record handling. It stops both services and removes its temporary data on exit.

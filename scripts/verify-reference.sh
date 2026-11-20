@@ -9,11 +9,20 @@ fi
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$repo_root"
 reference_root=$(cd "$1" && pwd)
-expected_reference=0c51be517db5a0ff90587c6e5045bdd019fe4b40
+expected_reference=$(sed -n 's/^REFERENCE_COMMIT=//p' knit-reference.lock)
+if [[ ! "$expected_reference" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "knit-reference.lock must set REFERENCE_COMMIT to a full commit SHA" >&2
+  exit 2
+fi
 actual_reference=$(git -C "$reference_root" rev-parse HEAD)
 if [[ "$actual_reference" != "$expected_reference" ]]; then
-  echo "reference checkout must be $expected_reference (found $actual_reference)" >&2
-  exit 2
+  # The weekly upstream drift check sets this to try a newer reference before the pin moves.
+  if [[ "${KNIT_REFERENCE_UNPINNED:-}" == 1 ]]; then
+    echo "warning: reference checkout $actual_reference is not the pinned $expected_reference" >&2
+  else
+    echo "reference checkout must be $expected_reference from knit-reference.lock (found $actual_reference)" >&2
+    exit 2
+  fi
 fi
 
 if [[ -z "${JAVA_HOME:-}" ]]; then

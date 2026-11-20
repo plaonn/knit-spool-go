@@ -19,6 +19,8 @@ jobs:
           cache: true
       - run: go test ./...
       - run: go vet ./...
+      - name: Upstream drift check unit tests
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
 
   cross-build:
     name: Linux ${{ matrix.arch }} cgo-free build
@@ -63,10 +65,11 @@ jobs:
           python-version: "3.12"
       - name: Checkout pinned Knit Kotlin reference
         env:
-          REFERENCE_SHA: 0c51be517db5a0ff90587c6e5045bdd019fe4b40
           REFERENCE_DIR: ${{ runner.temp }}/knit-spool-reference
         run: |
-          git clone --filter=blob:none https://github.com/getknit/spool.git "$REFERENCE_DIR"
-          git -C "$REFERENCE_DIR" checkout --detach "$REFERENCE_SHA"
+          reference_repo=$(sed -n 's/^REFERENCE_REPO=//p' knit-reference.lock)
+          reference_sha=$(sed -n 's/^REFERENCE_COMMIT=//p' knit-reference.lock)
+          git clone --filter=blob:none "https://github.com/$reference_repo.git" "$REFERENCE_DIR"
+          git -C "$REFERENCE_DIR" checkout --detach "$reference_sha"
       - name: Run official conformance and differential checks
         run: scripts/verify-reference.sh "${{ runner.temp }}/knit-spool-reference"
