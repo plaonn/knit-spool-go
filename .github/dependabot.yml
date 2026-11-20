@@ -14,3 +14,8 @@ updates:
     groups:
       github-actions:
         patterns: ["*"]
+    ignore:
+      # The weekly Knit client run mirrors the Knit build, which stays on setup-gradle v5: from v6 its
+      # caching is a separate component under the Gradle Terms of Use rather than MIT. Revisit when Knit moves.
+      - dependency-name: gradle/actions
+        update-types: ["version-update:semver-major"]

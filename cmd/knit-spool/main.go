@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"syscall"
@@ -24,7 +25,28 @@ func main() {
 	}
 }
 
-const usage = "usage: knit-spool [run|check|commons-invite [--link-from-stdin]]"
+const usage = "usage: knit-spool [run|check|version|commons-invite [--link-from-stdin]]"
+
+// version is set by the release build (-ldflags "-X main.version=vX.Y.Z"); other builds report "dev".
+var version = "dev"
+
+// versionLine is `knit-spool <version> <commit>`: the updater reads the second field, people the third.
+func versionLine() string {
+	revision, modified := "unknown", ""
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, setting := range info.Settings {
+			switch setting.Key {
+			case "vcs.revision":
+				revision = setting.Value
+			case "vcs.modified":
+				if setting.Value == "true" {
+					modified = "+dirty"
+				}
+			}
+		}
+	}
+	return fmt.Sprintf("knit-spool %s %s%s", version, revision, modified)
+}
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	command := "run"
@@ -33,6 +55,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		args = args[1:]
 	}
 	switch command {
+	case "version":
+		if len(args) != 0 {
+			return errors.New(usage)
+		}
+		fmt.Fprintln(stdout, versionLine())
+		return nil
 	case "check":
 		if len(args) != 0 {
 			return errors.New(usage)
@@ -91,7 +119,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 			runTicker(ctx, cfg.StatusInterval, func() { log.Printf("status %v", engine.Stats()) })
 		}()
 	}
-	log.Printf("starting knit-spool-go (%s)", cfg.String())
+	log.Printf("starting %s (%s)", versionLine(), cfg.String())
 	for _, warning := range cfg.Warnings() {
 		log.Printf("warning: %s", warning)
 	}

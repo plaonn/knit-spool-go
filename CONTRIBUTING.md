@@ -39,7 +39,7 @@ Use `vMAJOR.MINOR.PATCH` tags. While the project is pre-1.0, use `v0.MINOR.PATCH
 
 Releases are a maintainer action after the selected commit has landed on `main` and its four checks have passed. Create an annotated tag at that exact commit and a matching GitHub Release; do not move or reuse published tags. Include the commit, protocol/reference revision, changes, configuration or storage compatibility, and upgrade/rollback notes. If attaching binaries, identify OS/architecture (including `GOARM=6` for ARMv6), build inputs, and SHA-256 checksums. Preserve [LICENSE](LICENSE) and make the corresponding source available.
 
-There is no release automation in the current workflow. No tags or releases existed when this guide was prepared on 2026-10-05; until one is published, identify a build by its full commit SHA rather than an assumed version.
+Pushing the tag runs the [Release workflow](.github/workflows/release.yml): it refuses a tag that is not on `main`, runs the tests, builds the four Linux binaries with the tag as `knit-spool version`, writes `SHA256SUMS`, attests provenance and publishes the GitHub Release with generated notes (a `-suffix` tag becomes a prerelease). Edit the notes afterwards for compatibility and upgrade/rollback details. Hosts running [`deploy/update`](README.md#automatic-updates-from-releases) install a new non-prerelease within a day, so only tag what you would deploy; to stop a bad release, publish a fixed patch release. Builds that are not releases report version `dev` and are identified by commit SHA.
 
 ### Upgrade and rollback
 
@@ -85,7 +85,7 @@ main 보호 규칙은 PR을 요구하며 **필수 승인 리뷰 수는 0**입니
 
 관리자는 대상 커밋이 main에 병합되고 CI 4개를 통과한 뒤 해당 커밋에 annotated tag와 같은 이름의 GitHub Release를 만듭니다. 게시한 태그를 이동하거나 재사용하지 않습니다. 릴리스에는 커밋, 프로토콜/참조 리비전, 변경 사항, 설정·저장소 호환성, 업그레이드·롤백 절차를 기록합니다. 바이너리를 첨부한다면 OS/아키텍처(ARMv6은 `GOARM=6` 포함), 빌드 입력과 SHA-256 체크섬을 명시합니다. [LICENSE](LICENSE)를 보존하고 대응 소스를 제공합니다.
 
-현재 workflow에는 릴리스 자동화가 없습니다. 이 문서를 준비한 2026-10-05에는 태그와 릴리스가 없었습니다. 첫 릴리스가 게시되기 전에는 추정 버전 대신 전체 커밋 SHA로 빌드를 식별합니다.
+태그를 push하면 [Release workflow](.github/workflows/release.yml)가 main에 없는 태그를 거부하고, 테스트를 실행하고, 태그를 `knit-spool version`으로 넣은 리눅스 바이너리 4종과 `SHA256SUMS`를 만들고, provenance attestation을 남긴 뒤 자동 생성 노트로 GitHub Release를 게시합니다(`-접미사` 태그는 prerelease). 호환성과 업그레이드·롤백 내용은 게시 후 노트에 보충합니다. [`deploy/update`](README.md#automatic-updates-from-releases)를 쓰는 호스트는 prerelease가 아닌 새 릴리스를 하루 안에 설치하므로, 배포해도 되는 커밋에만 태그를 붙입니다. 잘못된 릴리스는 수정한 patch 릴리스로 대체합니다. 릴리스가 아닌 빌드는 버전을 `dev`로 표시하며 커밋 SHA로 식별합니다.
 
 ### 업그레이드와 롤백
 

@@ -92,3 +92,17 @@ func TestUsageErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestVersionCommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if err := run([]string{"version"}, strings.NewReader(""), &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	fields := strings.Fields(stdout.String())
+	if len(fields) != 3 || fields[0] != "knit-spool" || fields[1] != version {
+		t.Fatalf("version output %q, want `knit-spool %s <commit>`", stdout.String(), version)
+	}
+	if err := run([]string{"version", "extra"}, strings.NewReader(""), &stdout, &stderr); err == nil {
+		t.Fatal("version accepted an argument")
+	}
+}

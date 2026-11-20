@@ -132,6 +132,18 @@ Edit `/etc/knit-spool/knit-spool.env` for deployment-specific values. Keep it at
 
 For upgrades, stop the service, make a database backup, replace the binary, then start it again. Startup checks SQLite integrity and creates missing tables/indexes. The service drains WebSocket connections on shutdown; clients should reconnect and resubscribe. Keep the prior binary and backup until health and client reconnection are confirmed.
 
+### Automatic updates from releases
+
+Each `vX.Y.Z` tag on `main` publishes a [GitHub Release](https://github.com/plaonn/knit-spool-go/releases) with cgo-free Linux binaries (`knit-spool-linux-amd64`, `-arm64`, `-armv7`, `-armv6`), `SHA256SUMS` and build provenance attestations (`gh attestation verify FILE --repo plaonn/knit-spool-go`). `knit-spool version` prints `knit-spool <version> <commit>`.
+
+[`deploy/update`](deploy/update) keeps a host on the latest release. A daily timer runs `knit-spool-update`, which does the upgrade above unattended: it verifies the checksum, checks that the binary reports the release tag and accepts the service configuration (`knit-spool check`), backs up the binary and the SQLite store with its WAL files to `/var/backups/knit-spool` (the newest three are kept), swaps the binary and waits for `/healthz`. If the service does not stay healthy, it restores the previous binary and the backup, which drops writes received after the update, and does not retry that release. It never downgrades or installs prereleases. An optional notify command reports each update or rollback.
+
+```sh
+sudo deploy/update/install.sh
+sudo install -o root -g root -m 0600 deploy/update/update.env.example /etc/knit-spool/update.env  # then edit
+sudo systemctl start knit-spool-update && journalctl -u knit-spool-update -n 50
+```
+
 ## Conformance and CI
 
 The repository tests protocol vectors, storage boundaries, persistence and file permissions, connection lifecycle, authentication, rate limits, and HTTP operations. CI also builds the daemon without cgo for Linux amd64 and ARMv6 (`GOARM=6`), runs the official Knit Kotlin conformance CLI, and compares edge-case transcripts against the pinned Kotlin reference daemon.
