@@ -262,8 +262,17 @@ func asBytes(v any) []byte {
 	return b
 }
 
+// buildSpool returns KNIT_SPOOL_BINARY when set (scripts/remote-arm-test.sh runs this test on a host
+// without Go, against a cross-compiled daemon), and otherwise builds the daemon from this checkout.
 func buildSpool(t *testing.T) string {
 	t.Helper()
+	if binary := os.Getenv("KNIT_SPOOL_BINARY"); binary != "" {
+		abs, err := filepath.Abs(binary)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return abs
+	}
 	goTool, err := exec.LookPath("go")
 	if err != nil {
 		t.Skip("go tool not on PATH")
