@@ -109,6 +109,9 @@ func TestAuthenticationCapacityAndPreHelloCloseCodes(t *testing.T) {
 	if closeErr, ok := err.(*websocket.CloseError); !ok || closeErr.Code != closeAuth {
 		t.Fatalf("unauthenticated close: %#v", err)
 	}
+	// The handler releases its slot after sending the close, so with MaxConns=1 wait for that release
+	// before the next dial, which would otherwise race it and get 503.
+	waitForLiveConns(t, s, 0)
 
 	url := testWSURL(httpServer.URL) + "?k=" + strings.ReplaceAll(cfg.Token, " ", "%20")
 	first, _, err := websocket.DefaultDialer.Dial(url, nil)
@@ -205,4 +208,21 @@ func TestCapacityRefusalLeavesHealthAvailable(t *testing.T) {
 		t.Fatalf("healthz during capacity: %d", response.StatusCode)
 	}
 	response.Body.Close()
+}
+
+func waitForLiveConns(t *testing.T, s *Server, want int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		s.mu.Lock()
+		live := s.live
+		s.mu.Unlock()
+		if live == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("live connections %d, want %d", live, want)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
