@@ -1,0 +1,80 @@
+name: Release
+
+# Pushing a vX.Y.Z tag that points at a commit on main publishes a GitHub Release with cgo-free Linux
+# binaries, SHA256SUMS and build provenance attestations. Hosts running deploy/update pick it up.
+# See CONTRIBUTING.md#versions-tags-and-releases.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Check the tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "tag $TAG is not vMAJOR.MINOR.PATCH[-prerelease]" >&2
+            exit 1
+          fi
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "tag $TAG points at $GITHUB_SHA, which is not on main" >&2
+            exit 1
+          fi
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Test
+        run: |
+          go test ./...
+          go vet ./...
+      - name: Build
+        env:
+          TAG: ${{ github.ref_name }}
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          mkdir dist
+          build() {
+            GOOS=linux GOARCH=$1 GOARM=${3:-} go build -trimpath \
+              -ldflags="-s -w -X main.version=$TAG" -o "dist/knit-spool-linux-$2" ./cmd/knit-spool
+          }
+          build amd64 amd64
+          build arm64 arm64
+          build arm armv7 7
+          build arm armv6 6
+          (cd dist && sha256sum knit-spool-linux-* > SHA256SUMS && cat SHA256SUMS)
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/knit-spool-linux-*
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          prerelease=()
+          [[ "$TAG" == *-* ]] && prerelease=(--prerelease)
+          gh release create "$TAG" dist/* --verify-tag --generate-notes "${prerelease[@]}" \
+            --title "$TAG"

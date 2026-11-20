@@ -1,0 +1,11 @@
+# Checks for a new knit-spool release once a day, at a quiet hour; a missed run happens at boot.
+[Unit]
+Description=Daily knit-spool release check
+
+[Timer]
+OnCalendar=*-*-* 04:17 Asia/Seoul
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+# Installs the latest GitHub release of knit-spool on this host, and rolls back when it does not come up.
+#
+# Run by knit-spool-update.timer as root. One run:
+#   1. reads the latest (non-pre-)release tag; stops when the installed binary already reports it, when it
+#      is older than the installed version, or when that tag already failed here;
+#   2. downloads the asset for this host and SHA256SUMS, verifies the checksum, checks that the binary
+#      reports the tag and accepts the service configuration (`knit-spool check`);
+#   3. stops the service, backs up the binary and the SQLite store (with its WAL files), installs the
+#      new binary and starts the service;
+#   4. waits for /healthz and for the service to stay up; otherwise restores the backup, starts the
+#      previous version and records the tag as failed so it is not retried.
+# KNIT_UPDATE_NOTIFY, when set, is run as `NOTIFY SEVERITY TITLE DETAIL` (severity: check or action).
+#
+# Settings (environment, usually /etc/knit-spool/update.env):
+#   KNIT_UPDATE_ASSET      release asset for this host, e.g. knit-spool-linux-armv7 (required)
+#   KNIT_UPDATE_REPO       GitHub repository (plaonn/knit-spool-go)
+#   KNIT_UPDATE_ENV_FILES  space-separated env files the service reads, for `check`
+#                          (/etc/knit-spool/knit-spool.env); plain KEY=VALUE lines, never printed
+#   KNIT_UPDATE_BINARY     installed binary (/usr/local/bin/knit-spool)
+#   KNIT_UPDATE_SERVICE    systemd unit (knit-spool.service)
+#   KNIT_UPDATE_DATA       SQLite store (/var/lib/knit-spool/spool.db)
+#   KNIT_UPDATE_HEALTH_URL health endpoint (http://127.0.0.1:9470/healthz)
+#   KNIT_UPDATE_BACKUPS    backup directory (/var/backups/knit-spool); KNIT_UPDATE_KEEP backups kept (3)
+#   KNIT_UPDATE_NOTIFY     notification command (none)
+set -euo pipefail
+
+asset=${KNIT_UPDATE_ASSET:?set KNIT_UPDATE_ASSET, e.g. knit-spool-linux-armv7}
+repo=${KNIT_UPDATE_REPO:-plaonn/knit-spool-go}
+env_files=${KNIT_UPDATE_ENV_FILES:-/etc/knit-spool/knit-spool.env}
+binary=${KNIT_UPDATE_BINARY:-/usr/local/bin/knit-spool}
+service=${KNIT_UPDATE_SERVICE:-knit-spool.service}
+data=${KNIT_UPDATE_DATA:-/var/lib/knit-spool/spool.db}
+health=${KNIT_UPDATE_HEALTH_URL:-http://127.0.0.1:9470/healthz}
+backups=${KNIT_UPDATE_BACKUPS:-/var/backups/knit-spool}
+keep=${KNIT_UPDATE_KEEP:-3}
+notify=${KNIT_UPDATE_NOTIFY:-}
+state=${STATE_DIRECTORY:-/var/lib/knit-spool-update}
+
+log() { printf '%s\n' "$*"; }
+send() {
+  [[ -n "$notify" ]] || return 0
+  "$notify" "$@" || log "notification failed (update result unaffected)"
+}
+
+version_of() { "$1" version 2>/dev/null | awk '$1 == "knit-spool" { print $2 }' || true; }
+
+healthy() {
+  local deadline=$((SECONDS + 60))
+  while ((SECONDS < deadline)); do
+    if systemctl is-active --quiet "$service" &&
+      curl -fsS --max-time 5 "$health" 2>/dev/null | grep -q '"status": *"ok"'; then
+      # Stay up for a while: a crash loop can pass one probe between restarts.
+      sleep 15
+      systemctl is-active --quiet "$service" &&
+        curl -fsS --max-time 5 "$health" 2>/dev/null | grep -q '"status": *"ok"'
+      return
+    fi
+    sleep 2
+  done
+  return 1
+}
+
+latest=$(curl -fsSL --max-time 30 -H 'Accept: application/vnd.github+json' \
+  "https://api.github.com/repos/$repo/releases/latest" |
+  python3 -c 'import json, sys; print(json.load(sys.stdin)["tag_name"])')
+if [[ ! "$latest" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  log "latest release tag '$latest' is not vMAJOR.MINOR.PATCH; not updating"
+  exit 1
+fi
+current=$(version_of "$binary")
+current=${current:-unknown}
+if [[ "$current" == "$latest" ]]; then
+  log "up to date at $current"
+  exit 0
+fi
+if [[ "$current" =~ ^v[0-9] && "$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -n 1)" != "$latest" ]]; then
+  log "installed $current is newer than the latest release $latest; not downgrading"
+  exit 0
+fi
+mkdir -p "$state"
+if [[ -f "$state/failed" && "$(cat "$state/failed")" == "$latest" ]]; then
+  log "$latest already failed here; waiting for a newer release (remove $state/failed to retry)"
+  exit 0
+fi
+log "updating $current -> $latest"
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+fail_before_install() {
+  log "update to $latest stopped before install: $1"
+  echo "$latest" >"$state/failed"
+  send action "knit-spool $latest 업데이트 보류" "$1. 설치 버전 $current 유지."
+  exit 1
+}
+base="https://github.com/$repo/releases/download/$latest"
+curl -fsSL --max-time 300 -o "$tmp/$asset" "$base/$asset" || fail_before_install "download failed"
+curl -fsSL --max-time 30 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || fail_before_install "SHA256SUMS download failed"
+expected=$(awk -v name="$asset" '$2 == name || $2 == "*" name { print $1 }' "$tmp/SHA256SUMS")
+actual=$(sha256sum "$tmp/$asset" | awk '{ print $1 }')
+[[ -n "$expected" && "$expected" == "$actual" ]] || fail_before_install "checksum mismatch for $asset"
+chmod 0755 "$tmp/$asset"
+[[ "$(version_of "$tmp/$asset")" == "$latest" ]] || fail_before_install "$asset does not report $latest"
+if ! (
+  set -a
+  for file in $env_files; do
+    # shellcheck disable=SC1090
+    . "$file"
+  done
+  set +a
+  "$tmp/$asset" check >/dev/null
+); then
+  fail_before_install "the new binary rejects the service configuration (knit-spool check)"
+fi
+
+backup="$backups/$(date -u +%Y%m%dT%H%M%SZ)-$current"
+install -d -m 0700 "$backups" "$backup"
+cp -p "$binary" "$backup/knit-spool"
+systemctl stop "$service"
+for file in "$data" "$data-wal" "$data-shm"; do
+  if [[ -e "$file" ]]; then cp -p "$file" "$backup/"; fi
+done
+install -o root -g root -m 0755 "$tmp/$asset" "$binary.new"
+mv -f "$binary.new" "$binary"
+systemctl start "$service" || true
+
+if healthy; then
+  log "updated $current -> $latest"
+  rm -f "$state/failed"
+  # Keep the newest $keep backups.
+  find "$backups" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -r | tail -n +"$((keep + 1))" |
+    while read -r old; do rm -rf "${backups:?}/$old"; done
+  send check "knit-spool $latest 업데이트 완료" "$current → $latest. 백업 $backup"
+  exit 0
+fi
+
+log "$latest did not come up healthy; rolling back to $current"
+echo "$latest" >"$state/failed"
+journalctl -u "$service" -n 30 --no-pager || true
+systemctl stop "$service" || true
+install -o root -g root -m 0755 "$backup/knit-spool" "$binary.new"
+mv -f "$binary.new" "$binary"
+rm -f "$data-wal" "$data-shm"
+for file in "$data" "$data-wal" "$data-shm"; do
+  name=$(basename "$file")
+  if [[ -e "$backup/$name" ]]; then cp -p "$backup/$name" "$file"; fi
+done
+systemctl start "$service" || true
+if healthy; then
+  send action "knit-spool $latest 업데이트 실패, 롤백함" "$current 로 복구됨. 업데이트 뒤 기록된 내용은 백업 시점으로 되돌아감. 백업 $backup"
+else
+  send action "knit-spool 롤백 후에도 비정상" "$latest 실패 후 $current 복구도 health 실패. 즉시 확인 필요. 백업 $backup"
+fi
+exit 1
