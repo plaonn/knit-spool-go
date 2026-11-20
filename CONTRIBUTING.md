@@ -15,6 +15,8 @@ All four existing GitHub Actions checks must pass before merging:
 
 See [the workflow](.github/workflows/ci.yml) for the commands; the pinned protocol reference is in [`knit-reference.lock`](knit-reference.lock). Run `go test ./...` and `go vet ./...` from the repository root for Go changes; reference checks are described in [README.md](README.md#conformance-and-ci). Documentation changes also go through the four CI checks.
 
+To check a change on real 32-bit ARM Linux (the Raspberry Pi targets), run `scripts/remote-arm-test.sh SSH_HOST`. It cross-compiles the daemon and test binaries (`GOARM=7` by default), runs the Go tests and the end-to-end test on the host in a temporary directory over SSH, and removes it. The test daemon uses a loopback port and a throwaway store, so a spool already running there is left alone; Go is not needed on the host.
+
 The main ruleset requires a pull request with **zero required approving reviews**, so the solo maintainer can merge their own PR after checking the final diff and CI results. Force pushes and deletion of `main` are blocked, with no bypass actors configured. Requiring the branch to be up to date with the base is not enabled. Resolve conflicts and rerun relevant validation when incorporating newer changes; do not disable protection to get a change through.
 
 ### Tracking upstream Knit
@@ -58,6 +60,8 @@ If that option is unavailable, ask the maintainer how to arrange a private chann
 `main`에서 작업 브랜치를 만들고 `main` 대상 PR을 엽니다. 변경 목적과 영향을 설명하고 관련 검증 결과를 남깁니다. 작업 중에는 초안 PR을 사용할 수 있습니다.
 
 위에 나열한 기존 GitHub Actions 검사 4개가 모두 통과해야 병합할 수 있습니다. 명령은 [workflow](.github/workflows/ci.yml), 고정된 프로토콜 참조는 [`knit-reference.lock`](knit-reference.lock)을 확인하세요. Go 변경은 저장소 루트에서 `go test ./...`, `go vet ./...`를 실행하고, 참조 검증은 [README](README.md#conformance-and-ci)를 따릅니다. 문서 변경도 같은 CI 4개를 거칩니다.
+
+실제 32비트 ARM Linux(Raspberry Pi 대상)에서 확인하려면 `scripts/remote-arm-test.sh SSH_HOST`를 실행합니다. daemon과 테스트 바이너리를 크로스 컴파일(기본 `GOARM=7`)하고, SSH로 대상 호스트의 임시 디렉터리에서 Go 테스트와 e2e 테스트를 실행한 뒤 지웁니다. 테스트 daemon은 loopback 포트와 일회용 저장소를 쓰므로 이미 돌고 있는 spool은 건드리지 않으며, 대상 호스트에 Go가 없어도 됩니다.
 
 main 보호 규칙은 PR을 요구하며 **필수 승인 리뷰 수는 0**입니다. 1인 관리자는 최종 diff와 CI 결과를 확인한 뒤 자신의 PR을 병합할 수 있습니다. main의 강제 push와 삭제는 차단되며 우회 대상은 없습니다. base 최신 상태를 강제하는 옵션은 사용하지 않습니다. 새 변경을 반영할 때 충돌을 해결하고 관련 검증을 다시 수행하며, 병합을 위해 보호 규칙을 해제하지 않습니다.
 
