@@ -1,7 +1,8 @@
 name: Upstream drift
 
-# Weekly check for upstream Knit changes past the pins in knit-reference.lock.
-# It reports; it never moves a pin. See CONTRIBUTING.md#tracking-upstream-knit.
+# Weekly check for upstream Knit changes past the pins in knit-reference.lock, plus a run of the latest
+# released Knit client against this daemon. It reports; it never moves a pin.
+# See CONTRIBUTING.md#tracking-upstream-knit. Runs from other branches never touch issues.
 
 on:
   schedule:
@@ -84,10 +85,112 @@ jobs:
           KNIT_REFERENCE_UNPINNED: "1"
         run: scripts/verify-reference.sh "${{ runner.temp }}/knit-spool-reference"
 
+  knit-client:
+    name: Latest Knit client against this spool
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      result: ${{ steps.e2e.outcome }}
+      release: ${{ steps.release.outputs.tag }}
+    env:
+      # Knit's own CI needs a 4 GB Gradle heap to compile :app's unit tests.
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs='-Xmx4g -Dfile.encoding=UTF-8'"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Find the latest Knit release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh api repos/getknit/knit/releases/latest --jq .tag_name)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Checkout the Knit client
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+          GIT_LFS_SKIP_SMUDGE: "1"
+        run: git clone --depth 1 --branch "$TAG" https://github.com/getknit/knit.git "$RUNNER_TEMP/knit"
+      - name: Run the Knit client against this spool
+        id: e2e
+        continue-on-error: true
+        run: scripts/knit-client-e2e.sh "$RUNNER_TEMP/knit"
+      - uses: actions/upload-artifact@v7
+        if: steps.e2e.outcome == 'failure'
+        with:
+          name: knit-client-test-report
+          path: ${{ runner.temp }}/knit/app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: ignore
+
+  client-report:
+    name: Update Knit client issue
+    needs: knit-client
+    if: always() && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open, update or close the Knit client issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          JOB: ${{ needs.knit-client.result }}
+          RESULT: ${{ needs.knit-client.outputs.result }}
+          RELEASE: ${{ needs.knit-client.outputs.release }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          label=knit-client-e2e
+          gh label create "$label" --color B60205 \
+            --description "The latest Knit client fails against this spool" --force >/dev/null
+          issue=$(gh issue list --label "$label" --state open --limit 1 --json number --jq '.[0].number // empty')
+
+          if [[ "$JOB:$RESULT" == success:success ]]; then
+            if [[ -n "$issue" ]]; then
+              gh issue close "$issue" --comment "Knit client \`$RELEASE\` passes against this spool on [this run]($RUN_URL)."
+            fi
+            exit 0
+          fi
+
+          if [[ "$JOB:$RESULT" == success:failure ]]; then
+            what="Knit client \`$RELEASE\` **fails** against this spool."
+          else
+            what="The Knit client job did not complete ($JOB) for \`${RELEASE:-unknown release}\`."
+          fi
+          key="${RELEASE:-unknown}:$JOB:$RESULT"
+          body=$(cat <<EOF
+          $what
+
+          The weekly upstream drift workflow runs [\`scripts/knit-client-e2e.sh\`](https://github.com/$GH_REPO/blob/main/scripts/knit-client-e2e.sh): the latest released Knit app's own link parser, dialer and connection code, on the JVM, against a freshly built knit-spool. A failure can be a regression here, a client change this spool must follow, or a change in Knit's internal test seams that only needs the test updated. See the [run log]($RUN_URL); the Gradle test report is attached to the run when the test itself failed.
+
+          <!-- client-key: $key -->
+          EOF
+          )
+          title="Knit client e2e fails: ${RELEASE:-unknown}"
+          if [[ -n "$issue" ]]; then
+            previous=$(gh issue view "$issue" --json body --jq .body | tr -d '\r' | sed -n 's/^ *<!-- client-key: \(.*\) -->$/\1/p')
+            gh issue edit "$issue" --title "$title" --body "$body"
+            if [[ "$previous" != "$key" ]]; then
+              gh issue comment "$issue" --body "Still failing, now \`$key\`. [Run]($RUN_URL)"
+            fi
+          else
+            gh issue create --title "$title" --label "$label" --body "$body"
+          fi
+
   report:
     name: Update tracking issue
     needs: [detect, latest-conformance]
-    if: always() && needs.detect.result == 'success'
+    if: always() && needs.detect.result == 'success' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       issues: write

@@ -138,6 +138,8 @@ The repository tests protocol vectors, storage boundaries, persistence and file 
 
 The end-to-end test in [`e2e/`](e2e/relay_invite_e2e_test.go) builds the binary, mints a relay invite link with `commons-invite`, starts `knit-spool run` behind a throwaway TLS certificate, and then uses only the link, as a newcomer's client would: it decodes the link, dials its `wss://` URL with the embedded token, checks that HELLO advertises the link's room, and has two clients exchange a post in the commons room. It decodes and encodes CBOR without the daemon's own code, so a mistake shared by the daemon's encoder and decoder cannot pass unnoticed. `go test -short ./...` skips it.
 
+Every week the [upstream drift workflow](CONTRIBUTING.md#tracking-upstream-knit) also runs the latest released Knit app's own client code (link parser, dialer, connection) against a freshly built daemon on the JVM, without a device: [`scripts/knit-client-e2e.sh`](scripts/knit-client-e2e.sh).
+
 To run the official reference checks locally, provide a [`getknit/knit-spool`](https://github.com/getknit/knit-spool) checkout at the `REFERENCE_COMMIT` from `knit-reference.lock`:
 
 ```sh
