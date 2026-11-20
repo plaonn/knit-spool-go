@@ -345,6 +345,21 @@ func (c Config) EffectiveMetricsToken() string {
 	return c.Token
 }
 
+// AdvertisesCommonsName reports whether HELLO carries the commons room name. Without an access
+// token anyone who connects reads HELLO, so room names stay off it (S-7.4-19).
+func (c Config) AdvertisesCommonsName() bool {
+	return c.Commons != nil && c.Commons.Name != "" && c.Token != ""
+}
+
+// Warnings lists accepted settings that do not take effect as configured.
+func (c Config) Warnings() []string {
+	var warnings []string
+	if c.Commons != nil && c.Commons.Name != "" && !c.AdvertisesCommonsName() {
+		warnings = append(warnings, "SPOOL_COMMONS_NAME is not advertised because SPOOL_TOKEN is unset; a public HELLO keeps room names off (Knit Spool Protocol S-7.4-19)")
+	}
+	return warnings
+}
+
 func (c Config) String() string {
 	synchronous, err := sqliteSynchronousMode(c.SQLiteSynchronous)
 	if err != nil {

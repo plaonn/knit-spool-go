@@ -103,6 +103,14 @@ func CommonsScopeID(secret []byte) [32]byte {
 	return sha256.Sum256(input)
 }
 
+// CommonsTag is a commons room's one-way HELLO tag (B-7.4-16): the first 8 bytes of
+// SHA-256("knit/spool/v1/commons-tag" || scopeId). It identifies a room without revealing its scope id.
+func CommonsTag(scopeID [32]byte) []byte {
+	input := append([]byte("knit/spool/v1/commons-tag"), scopeID[:]...)
+	sum := sha256.Sum256(input)
+	return sum[:8]
+}
+
 func EncodeCommonsInvite(secret []byte) (string, [32]byte, error) {
 	if len(secret) != 32 {
 		return "", [32]byte{}, errors.New("commons secret must be 32 bytes")

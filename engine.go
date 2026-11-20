@@ -194,13 +194,19 @@ func (e *Engine) Hello() record {
 	}
 	if cc := e.cfg.Commons; cc != nil {
 		commons := record{"maxFrames": cc.MaxFrames, "ttlMs": cc.TTLMS, "maxBlob": cc.MaxBlob}
-		if cc.Name != "" {
+		if e.cfg.AdvertisesCommonsName() {
 			commons["name"] = cc.Name
 		}
 		if cc.Attach {
 			commons["attach"] = true
 		}
+		// S-7.4-1: `commons` repeats rooms[0] without its tag; a single-room spool sends both.
+		room := record{"tag": CommonsTag(cc.ScopeID)}
+		for key, value := range commons {
+			room[key] = value
+		}
 		hello["commons"] = commons
+		hello["rooms"] = []any{room}
 	}
 	return hello
 }

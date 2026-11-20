@@ -37,6 +37,9 @@ func run(args []string) error {
 			return err
 		}
 		fmt.Println(cfg.String())
+		for _, warning := range cfg.Warnings() {
+			fmt.Fprintln(os.Stderr, "warning:", warning)
+		}
 		return nil
 	case "commons-invite":
 		invite, id, err := spool.NewCommonsInvite()
@@ -79,6 +82,9 @@ func run(args []string) error {
 		}()
 	}
 	log.Printf("starting knit-spool-go (%s)", cfg.String())
+	for _, warning := range cfg.Warnings() {
+		log.Printf("warning: %s", warning)
+	}
 	serverErr := server.Run(ctx)
 	cancel()
 	workers.Wait()

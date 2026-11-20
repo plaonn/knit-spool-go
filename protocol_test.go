@@ -82,3 +82,32 @@ func TestDecoderRejectsIndefiniteAndDuplicateMapKeys(t *testing.T) {
 		t.Fatal("accepted duplicate key")
 	}
 }
+
+func TestOfficialCommonsRoomVectors(t *testing.T) {
+	for _, tc := range []struct{ scope, tag string }{
+		{"a081eddb259895d4b9e26b3142e5ce0d88e08721aed57f9ead6e6eb99b10edd6", "b15333db903e9745"},
+		{"ae34feaf814400c10160a8351729da34ee3c4b48ab69ecfca5eb9d168bf2c29e", "a2f73b72abeabcb1"},
+	} {
+		raw, _ := hex.DecodeString(tc.scope)
+		var scope [32]byte
+		copy(scope[:], raw)
+		if got := hex.EncodeToString(CommonsTag(scope)); got != tc.tag {
+			t.Errorf("commons tag for %s = %s, want %s", tc.scope[:8], got, tc.tag)
+		}
+	}
+	tag1, _ := hex.DecodeString("b15333db903e9745")
+	tag2, _ := hex.DecodeString("a2f73b72abeabcb1")
+	first := record{"name": "Home", "maxFrames": 500, "ttlMs": 86_400_000, "maxBlob": 65536}
+	assertWireVector(t, "helloSpoolRooms", record{
+		"t": "hello", "v": 1,
+		"commons": first,
+		"rooms": []any{
+			record{"tag": tag1, "name": "Home", "maxFrames": 500, "ttlMs": 86_400_000, "maxBlob": 65536},
+			record{"tag": tag2, "maxFrames": 200, "ttlMs": 86_400_000, "maxBlob": 65536, "attach": true},
+		},
+	}, "a461746568656c6c6f61760167636f6d6d6f6e73a4646e616d6564486f6d65696d61784672616d65731901"+
+		"f46574746c4d731a05265c00676d6178426c6f621a0001000065726f6f6d7382a56374616748b15333db"+
+		"903e9745646e616d6564486f6d65696d61784672616d65731901f46574746c4d731a05265c00676d6178"+
+		"426c6f621a00010000a56374616748a2f73b72abeabcb1696d61784672616d657318c86574746c4d731a"+
+		"05265c00676d6178426c6f621a0001000066617474616368f5")
+}
